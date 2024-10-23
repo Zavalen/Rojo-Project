@@ -1,0 +1,234 @@
+local Players = game:GetService("Players")
+local DataStoreService = game:GetService("DataStoreService")
+local RunService = game:GetService("RunService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local StatsEvent = ReplicatedStorage:WaitForChild("StatsEvent")
+local PlayerStatsFunction = ReplicatedStorage:WaitForChild("GetPlayerStatsFunction")
+
+
+local database = DataStoreService:GetDataStore("data")
+local sessionData = {}
+
+function PlayerAdded(player)
+	-- Displays on Leaderboard
+	local leaderstats = Instance.new("Folder")
+	leaderstats.Name = "leaderstats"
+	
+	
+	local lvl = Instance.new("IntValue")
+	lvl.Name = "Lvl"
+	lvl.Parent = leaderstats
+	
+	local pwrLvl = Instance.new("IntValue")
+	pwrLvl.Name = "POWERLVL"
+	pwrLvl.Parent = leaderstats
+	
+	local gold = Instance.new("IntValue")
+	gold.Name = "Gold"
+	gold.Parent = leaderstats
+	
+	
+	
+	
+	-- Does not display on leaderboard
+	local playerStats = Instance.new("Folder")
+	playerStats.Name = "playerStats"
+	playerStats.Parent = player
+	
+	
+	local perkPoints = Instance.new("IntValue")
+	perkPoints.Name = "PerkPoints"
+	perkPoints.Parent = playerStats
+	
+	local shards = Instance.new("IntValue")
+	shards.Name = "Shards"
+	shards.Parent = playerStats
+	
+	local xp = Instance.new("IntValue")
+	xp.Name = "XP"
+	xp.Parent = playerStats
+	
+	local hp = Instance.new("IntValue")
+	hp.Name = "HP"
+	hp.Parent = playerStats
+	
+	local atk = Instance.new("IntValue")
+	atk.Name = "ATK"
+	atk.Parent = playerStats
+	
+	local def = Instance.new("IntValue")
+	def.Name = "DEF"
+	def.Parent = playerStats
+	
+	local spd = Instance.new("IntValue")
+	spd.Name = "SPD"
+	spd.Parent = playerStats
+	
+	
+	local playerHeroes = Instance.new("Folder")
+	playerHeroes.Name = "Fighters"
+	playerHeroes.Parent = player
+	
+	local success = nil
+	local playerData = nil
+	local attempt = 1
+	
+	repeat
+		success, playerData = pcall(function()
+			 return database:GetAsync(player.UserId)
+		end)
+		attempt += 1
+		if not success then
+			warn(playerData)
+			task.wait(4)
+		end
+	until success or attempt == 5
+	
+	if success then
+		print ("Connected to Database")
+		if not playerData then 
+			print ("Assigning default data")
+			playerData = {
+				["Lvl"] = 1,
+				["PerkPoints"] = 0,
+				["Shards"] = 0,
+				["Gold"] = 0,
+				["Fighters"] = {},
+				["HP"] = 100,
+				["XP"] = 0,
+				["ATK"] = 1,
+				["DEF"] = 0, 
+				["SPD"] = 1,
+			}
+		end
+		sessionData[player.UserId] = playerData
+	else
+		warn("Unable to get data for "..player.UserId)
+		player:Kick("Unable to load your data. Please try again.")
+	end
+	
+	-- Updates local stats
+	lvl.Value = sessionData[player.UserId].Lvl
+	perkPoints.Value = sessionData[player.UserId].PerkPoints
+	shards.Value = sessionData[player.UserId].Shards
+	gold.Value = sessionData[player.UserId].Gold
+	hp.Value = sessionData[player.UserId].HP
+	xp.Value = sessionData[player.UserId].XP
+	atk.Value = sessionData[player.UserId].ATK
+	def.Value = sessionData[player.UserId].DEF
+	spd.Value = sessionData[player.UserId].SPD
+	pwrLvl.Value = updatePowerLvl(player)
+	
+	
+	
+	
+	leaderstats.Parent = player
+end
+
+function PlayerLeaving(player)
+	if sessionData[player.UserId] then
+		local success = nil
+		local errMsg = nil
+		local attempt = 1
+		
+		repeat
+			success, errMsg = pcall(function()
+				database:SetAsync(player.UserId, sessionData[player.UserId])
+			end)
+			attempt += 1
+			if not success then
+				warn(errMsg)
+				task.wait((3))
+			end
+		until success or attempt == 5
+		
+		if success then
+			print ("Data saved for: "..player.Name)
+		else
+			warn("Unable to save for: "..player.Name)
+		end
+	end
+end
+
+function ServerShutdown()
+	if  RunService:IsStudio()  then
+		return
+	end
+	print("Server Shutting Down")
+	task.wait(2)
+	for i, player in Players:GetPlayers() do
+		task.spawn(function()
+			PlayerLeaving(player)
+		end)
+
+	end
+end
+
+
+Players.PlayerAdded:Connect(PlayerAdded)
+Players.PlayerRemoving:Connect(PlayerLeaving)
+
+local function GetPlayerStats(player)
+	local playerStats = {["Fighters"] = {},
+	["HP"] = sessionData[player.UserId].HP,
+	["ATK"] = sessionData[player.UserId].ATK,
+	["DEF"] = sessionData[player.UserId].DEF, 
+	["SPD"] = sessionData[player.UserId].SPD,
+
+	}
+	return playerStats
+end
+
+PlayerStatsFunction.OnInvoke = GetPlayerStats
+
+StatsEvent.OnServerEvent:Connect(function(player : Player, eventType, stat, amt) 
+	
+	if eventType == "AddStat"  then
+		if sessionData[player.UserId].PerkPoints > 0  then
+			sessionData[player.UserId].PerkPoints -= 1
+			if stat == "HP"  then
+				sessionData[player.UserId].HP += 5
+				player.playerStats.HP.Value = sessionData[player.UserId].HP
+				player.playerStats.perkPoints.Value = sessionData[player.UserId].PerkPoints
+				player.leaderstats.pwrLvl.Value = updatePowerLvl(player)
+			elseif stat == "ATK" then
+				sessionData[player.UserId].ATK += 3
+				player.playerStats.ATK.Value = sessionData[player.UserId].ATK
+				player.playerStats.perkPoints.Value = sessionData[player.UserId].PerkPoints
+			elseif stat == "DEF" then
+				sessionData[player.UserId].DEF += 2
+				player.playerStats.DEF.Value = sessionData[player.UserId].DEF
+				player.playerStats.perkPoints.Value = sessionData[player.UserId].PerkPoints
+			elseif stat == "SPD" then
+				sessionData[player.UserId].SPD += 2
+				player.playerStats.SPD.Value = sessionData[player.UserId].SPD
+				player.playerStats.perkPoints.Value = sessionData[player.UserId].PerkPoints
+			end
+			StatsEvent:FireClient(player, "StatUpdate")
+			
+		end		
+		
+	
+	elseif eventType == "EndBattle" then
+		if stat == "GOLD" then
+			sessionData[player.UserId].Gold += amt
+			player.leaderstats.Gold.Value = sessionData[player.UserId].Gold
+		elseif stat == "XP" then
+			sessionData[player.UserId].XP += amt
+			player.playerStats.XP.Value = sessionData[player.UserId].XP
+		end
+
+	end
+end)
+
+function updatePowerLvl(player : Player)
+	local pwrlvl = 0
+	pwrlvl += sessionData[player.UserId].HP
+	pwrlvl += sessionData[player.UserId].ATK
+	pwrlvl += sessionData[player.UserId].DEF
+	pwrlvl += sessionData[player.UserId].SPD
+	pwrlvl = pwrlvl * sessionData[player.UserId].Lvl
+	return pwrlvl
+end
+
+game:BindToClose(ServerShutdown)

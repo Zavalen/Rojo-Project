@@ -1,0 +1,175 @@
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local ServerStorage = game:GetService("ServerStorage")
+local Players = game:GetService("Players")
+local BattleStartEvent = ReplicatedStorage:WaitForChild("BattleStartEvent")
+local GetPlayerStatsFunction = ReplicatedStorage:WaitForChild("GetPlayerStatsFunction")
+local BattleHUDEvent = ReplicatedStorage:WaitForChild("BattleEvent")
+
+local MenuHUDVisibility = false
+local BattleHUDVisibility = true
+local battleEnd = false
+local allPlayersReady = false
+local startTimer = false
+
+local enemyTeam = {}
+local playerTeam = {}
+local battleOrder = {}
+
+BattleStartEvent.Event:Connect(function(playersVS, enemies)
+	local numOfPlayers = #playersVS
+	
+	enemyTeam = enemies
+	print ("Battle Start")
+	for i, player in playersVS do
+		local playerStats = GetPlayerStatsFunction:Invoke(player)
+		playerTeam[player.Name] = {
+			["Name"] = player,
+			["ATK"] = playerStats.ATK,
+			["DEF"] = playerStats.DEF,
+			["Fighters"] = playerStats.Fighters,
+			["HP"] = playerStats.HP,
+			["CurrentHealth"] = playerStats.HP,
+			["SPD"] = playerStats.SPD,
+			["Down"] = false,
+			["ActionTaken"] = false,
+			["Action"] = "Action",
+			["Target"] = "The Enemy",
+			["Enemy"] = false
+			
+		}
+		--set attle order
+
+		
+		BattleHUDEvent:FireClient(player, MenuHUDVisibility, BattleHUDVisibility, playerTeam, enemyTeam)
+	end
+	
+	for i, enemy in enemyTeam do
+		
+		local j = 1
+		while j <= (#battleOrder + 1) do
+			if battleOrder[j] == nil or enemy.SPD >= battleOrder[j].SPD then
+				table.insert(battleOrder, j, enemy)
+				break
+			else
+				j += 1
+			end
+		end
+	end
+	for i, player in playerTeam do
+		local j = 1
+		while j <= (#battleOrder + 1) do
+			if battleOrder[j] == nil or player.SPD >= battleOrder[j].SPD  then
+				table.insert(battleOrder, j, player)
+				break
+			else
+				j += 1
+			end
+		end
+	end
+	print(battleOrder)
+	-- Play intro animations and such
+	-- run loop until all players or all enemies are dead
+end)
+
+local function round()
+	for i, combatant in battleOrder do
+		--Checks if an enemy
+		if combatant.Enemy == true  then
+			--Enemy chooses action
+			local attackChance = math.random(100) -- maybe set this to value in enemy characteristics
+			-- The enemy attacks
+			if combatant.AttackChance >= attackChance  then
+				local availPlayerTargets = {}
+				for j, player in playerTeam  do
+					if player.Down == false  then
+						table.insert(availPlayerTargets, player)
+					end
+				end
+				combatant.Target = availPlayerTargets[math.random(1, #availPlayerTargets)].Name
+				print(combatant)
+				
+				
+				local damage = combatant.ATK - playerTeam[combatant.Target.Name].DEF
+				if damage <= 0 then
+					damage = 1
+				end
+				print(combatant.Name.." will attack "..combatant.Target.Name.." for "..damage)
+				
+				playerTeam[combatant.Target.Name].CurrentHealth -= damage
+				local j = 1
+				while j <= #battleOrder do
+					if battleOrder[j].Name == combatant.Target then
+						
+						if playerTeam[combatant.Target.Name].CurrentHealth <= 0 then
+							playerTeam[combatant.Target.Name].CurrentHealth = 0
+							battleOrder[j].Down = true
+							playerTeam[combatant.Target.Name].Down = true
+						else
+							battleOrder[j].HP = playerTeam[combatant.Target.Name].CurrentHealth
+						end
+						break
+					else
+						j += 1
+					end
+				end
+
+			else
+				--enemy defends
+				print(combatant.Name.." will defend")
+			end
+		else
+			print(combatant)
+			if combatant.Target.Name == nil then
+				-- if the target is an enemy
+				
+				if combatant.Action == "BasicAttack"  then
+					local damage = combatant.ATK - enemyTeam[combatant.Target].DEF
+					if damage <= 0 then
+						damage = 1
+					end
+					print(combatant.Name.Name.." will attack "..combatant.Target.." for "..damage)
+					enemyTeam[combatant.Target].HP -= damage
+					-- left off here
+				end
+				print(combatant.Name.Name.." will attack "..combatant.Target.." for "..combatant.ATK)
+			else
+				-- if the target is player
+				print(combatant.Name.Name.." will attack "..combatant.Target.Name.." for "..combatant.ATK)
+			end
+			
+			
+		end
+	end
+end
+
+local roundStartArgs = coroutine.create(function()
+	while battleEnd == false  do
+		task.wait(8)
+		round()
+	end
+end)
+
+
+
+BattleHUDEvent.OnServerEvent:Connect(function(player, target, action)
+	playerTeam[player.Name].Target = target
+	playerTeam[player.Name].Action = action
+	playerTeam[player.Name].ActionTaken = true
+	for i, players in playerTeam  do
+		if players.ActionTaken == false then
+			allPlayersReady = false
+			break
+		else
+			allPlayersReady = true
+		end
+	end
+	if allPlayersReady  then
+		round()
+	end
+	
+	
+end)
+
+
+
+
